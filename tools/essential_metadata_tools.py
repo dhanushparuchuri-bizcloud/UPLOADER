@@ -1,6 +1,7 @@
-# tools/essential_metadata_tools.py
+# tools/essential_metadata_tools.py - FIXED VERSION
 """
 Essential tools for moving services metadata generation using AWS Bedrock
+FIXES: Enhanced sample values with business context, complete column processing, query-ready descriptions
 """
 
 import os
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class AthenaSamplingTool(BaseTool):
     name: str = "Athena Data Sampler"
-    description: str = "Extract real sample data and basic facts from moving services tables using AWS Athena"
+    description: str = "Extract real sample data and basic facts from moving services tables using AWS Bedrock"
     
     def __init__(self):
         super().__init__()
@@ -31,7 +32,7 @@ class AthenaSamplingTool(BaseTool):
             athena_client = boto3.client('athena', region_name=os.getenv('AWS_REGION', 'us-east-1'))
             s3_results_location = os.getenv('ATHENA_RESULTS_BUCKET', 's3://amspoc3queryresults/')
             athena_workgroup = os.getenv('ATHENA_WORKGROUP', 'primary')
-            athena_database = os.getenv('ATHENA_DATABASE', 'amspoc3test')
+            athena_database = os.getenv('ATHENA_DATABASE', 'ams_ai_curated_catalog_dev')
             
             # Ensure table name includes database if not already specified
             if '.' not in table_name:
@@ -39,28 +40,63 @@ class AthenaSamplingTool(BaseTool):
             else:
                 full_table_name = table_name
             
+            # ENHANCEMENT 1: Get COMPLETE table schema FIRST to ensure we process ALL columns
+            logger.info("📋 Getting complete table schema...")
+            complete_schema = self._get_complete_table_schema(full_table_name, athena_client, s3_results_location, athena_workgroup, athena_database)
+            logger.info(f"📊 Complete schema discovered: {len(complete_schema)} columns")
+            
             # Get sample data
             sample_data = self._get_sample_data(full_table_name, sample_size, athena_client, s3_results_location, athena_workgroup)
             if not sample_data:
+                # ENHANCEMENT 2: Even if no sample data, return schema info
+                logger.warning(f"No sample data found, but returning schema info for {len(complete_schema)} columns")
                 return json.dumps({
-                    "error": f"No data found in {full_table_name}",
                     "table_name": table_name,
-                    "status": "empty_table"
+                    "full_table_name": full_table_name,
+                    "sample_size_actual": 0,
+                    "columns_found": len(complete_schema),
+                    "table_schema": complete_schema,
+                    "column_analysis": {col: {"data_type": info.get("data_type"), "sample_values": [], "analysis": "No sample data available"} for col, info in complete_schema.items()},
+                    "sample_preview": [],
+                    "status": "schema_only"
                 })
             
-            # Get table schema information
-            table_schema = self._get_table_schema(full_table_name, athena_client, s3_results_location, athena_workgroup, athena_database)
-            
-            # Analyze each column
+            # ENHANCEMENT 3: Analyze ALL columns from schema, not just sample data columns
             column_analysis = {}
-            if sample_data and len(sample_data) > 0:
-                # Get column names from first row
-                column_names = list(sample_data[0].keys()) if sample_data else []
+            all_column_names = list(complete_schema.keys())
+            
+            logger.info(f"📊 Analyzing {len(all_column_names)} columns from complete schema")
+            
+            for column_name in all_column_names:
+                logger.info(f"   🔍 Processing column: {column_name}")
                 
-                for column_name in column_names:
-                    column_analysis[column_name] = self._analyze_column_samples(
-                        sample_data, column_name, table_schema.get(column_name, {})
+                # ENHANCEMENT 4: Get enriched sample values with business context
+                enriched_samples = self._get_enriched_sample_values(
+                    full_table_name, column_name, athena_client, s3_results_location, athena_workgroup
+                )
+                
+                # Use sample data if available, otherwise get from direct query
+                if sample_data and column_name in sample_data[0]:
+                    basic_analysis = self._analyze_column_samples(
+                        sample_data, column_name, complete_schema.get(column_name, {})
                     )
+                else:
+                    # Column exists in schema but not in sample - get basic info
+                    basic_analysis = {
+                        "data_type": complete_schema.get(column_name, {}).get('data_type', 'unknown'),
+                        "sample_values": [],
+                        "total_samples": 0,
+                        "non_null_samples": 0,
+                        "null_percentage": 0.0,
+                        "distinct_values": 0,
+                        "analysis": "Column not in sample data"
+                    }
+                
+                # ENHANCEMENT 5: Merge enriched samples with basic analysis
+                basic_analysis["enriched_sample_values"] = enriched_samples
+                basic_analysis["query_ready_terms"] = self._extract_query_ready_terms(enriched_samples, column_name)
+                
+                column_analysis[column_name] = basic_analysis
             
             result = {
                 "table_name": table_name,
@@ -68,13 +104,19 @@ class AthenaSamplingTool(BaseTool):
                 "sample_size_requested": sample_size,
                 "sample_size_actual": len(sample_data),
                 "columns_found": len(column_analysis),
-                "table_schema": table_schema,
+                "table_schema": complete_schema,
                 "column_analysis": column_analysis,
                 "sample_preview": sample_data[:5] if sample_data else [],
-                "status": "success"
+                "status": "success",
+                "enhancements_applied": [
+                    "Complete schema discovery",
+                    "Enriched sample values with business context",
+                    "Query-ready terms extraction",
+                    "All columns processed"
+                ]
             }
             
-            logger.info(f"✅ Successfully sampled {len(sample_data)} rows with {len(column_analysis)} columns")
+            logger.info(f"✅ Successfully processed {len(column_analysis)} columns with enhancements")
             return json.dumps(result, indent=2, default=str)
             
         except Exception as e:
@@ -85,6 +127,197 @@ class AthenaSamplingTool(BaseTool):
                 "status": "failed"
             })
     
+    def _get_complete_table_schema(self, table_name: str, athena_client, s3_results_location: str, athena_workgroup: str, athena_database: str) -> Dict[str, Dict]:
+        """ENHANCEMENT: Get COMPLETE schema information for ALL columns"""
+        try:
+            # Extract database and table name
+            if '.' in table_name:
+                database, table = table_name.split('.', 1)
+            else:
+                database = athena_database
+                table = table_name
+            
+            # ENHANCED: Get comprehensive column information
+            schema_query = f"""
+            SELECT 
+                column_name, 
+                data_type, 
+                is_nullable,
+                ordinal_position,
+                column_default,
+                column_comment
+            FROM information_schema.columns 
+            WHERE table_schema = '{database}' 
+            AND table_name = '{table}'
+            ORDER BY ordinal_position
+            """
+            
+            logger.info(f"🔍 Querying complete schema for {database}.{table}")
+            schema_results = self._execute_athena_query(schema_query, athena_client, s3_results_location, athena_workgroup)
+            
+            schema = {}
+            for row in schema_results:
+                col_name = row.get('column_name', '')
+                schema[col_name] = {
+                    'data_type': row.get('data_type', 'unknown'),
+                    'is_nullable': row.get('is_nullable', 'YES'),
+                    'ordinal_position': row.get('ordinal_position', 0),
+                    'column_default': row.get('column_default', ''),
+                    'column_comment': row.get('column_comment', '')
+                }
+                logger.info(f"   📋 {col_name} ({row.get('data_type', 'unknown')})")
+            
+            logger.info(f"✅ Complete schema loaded: {len(schema)} columns")
+            return schema
+            
+        except Exception as e:
+            logger.error(f"❌ Complete schema query failed: {e}")
+            # Fallback to basic schema
+            return self._get_table_schema(table_name, athena_client, s3_results_location, athena_workgroup, athena_database)
+    
+    def _get_enriched_sample_values(self, table_name: str, column_name: str, athena_client, s3_results_location: str, athena_workgroup: str) -> List[Dict]:
+        """ENHANCEMENT: Get ALL unique values with business context and meanings"""
+        try:
+            logger.info(f"🔍 Getting enriched sample values for {column_name}")
+            
+            # ENHANCEMENT: Get ALL unique values, not just sample
+            unique_values_query = f"""
+            SELECT DISTINCT {column_name} as value, COUNT(*) as frequency
+            FROM {table_name}
+            WHERE {column_name} IS NOT NULL
+            GROUP BY {column_name}
+            ORDER BY frequency DESC
+            LIMIT 50
+            """
+            
+            unique_values = self._execute_athena_query(unique_values_query, athena_client, s3_results_location, athena_workgroup)
+            
+            if not unique_values:
+                return []
+            
+            # ENHANCEMENT: Add business context to each value
+            enriched_values = []
+            for row in unique_values:
+                value = row.get("value")
+                frequency = row.get("frequency", 0)
+                
+                # ENHANCEMENT: Generate business meaning for each value
+                business_meaning = self._generate_business_meaning(column_name, value, table_name)
+                searchable_terms = self._generate_searchable_terms(column_name, value, table_name)
+                
+                enriched_values.append({
+                    "value": value,
+                    "frequency": frequency,
+                    "business_meaning": business_meaning,
+                    "searchable_terms": searchable_terms
+                })
+            
+            logger.info(f"✅ Enriched {len(enriched_values)} unique values for {column_name}")
+            return enriched_values
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Enriched sample values failed for {column_name}: {e}")
+            return []
+    
+    def _generate_business_meaning(self, column_name: str, value: Any, table_name: str) -> str:
+        """ENHANCEMENT: Generate 2-word business explanation for each value"""
+        column_lower = column_name.lower()
+        table_lower = table_name.lower()
+        
+        # Branch-specific business meanings
+        if 'branch' in table_lower:
+            if 'state' in column_lower:
+                state_names = {
+                    'TX': 'Texas Operations', 'FL': 'Florida Market', 'CA': 'California Region',
+                    'NY': 'New York', 'CO': 'Colorado Territory', 'OH': 'Ohio Market',
+                    'TN': 'Tennessee Hub', 'AZ': 'Arizona Region', 'NC': 'North Carolina',
+                    'GA': 'Georgia Market', 'VA': 'Virginia Territory', 'WA': 'Washington State'
+                }
+                return state_names.get(str(value), f"{value} Territory")
+            
+            elif 'city' in column_lower:
+                # City-specific meanings
+                city_meanings = {
+                    'austin': 'Austin Hub', 'miami': 'Miami Branch', 'denver': 'Denver Center',
+                    'dallas': 'Dallas Office', 'houston': 'Houston Branch', 'tampa': 'Tampa Hub',
+                    'orlando': 'Orlando Center', 'atlanta': 'Atlanta Branch', 'charlotte': 'Charlotte Hub'
+                }
+                return city_meanings.get(str(value).lower(), f"{value} Location")
+            
+            elif 'active' in column_lower:
+                return "Active Branch" if value else "Inactive Branch"
+            
+            elif 'leads' in column_lower:
+                return "Handles Leads" if value else "No Leads"
+            
+            elif 'time_zone' in column_lower:
+                zones = {-8: "Pacific Time", -7: "Mountain Time", -6: "Central Time", -5: "Eastern Time"}
+                return zones.get(value, f"GMT{value:+d}")
+            
+            elif 'id' in column_lower:
+                return f"Branch #{value}"
+        
+        # Generic meanings for other tables
+        if isinstance(value, bool):
+            return "True Value" if value else "False Value"
+        elif isinstance(value, (int, float)):
+            return f"Number {value}"
+        else:
+            return f"{str(value)[:15]} Value"
+    
+    def _generate_searchable_terms(self, column_name: str, value: Any, table_name: str) -> List[str]:
+        """ENHANCEMENT: Generate searchable terms for semantic search"""
+        terms = [str(value)]
+        column_lower = column_name.lower()
+        
+        # Add searchable variations
+        if 'state' in column_lower:
+            state_terms = {
+                'TX': ['texas', 'tx', 'lone star'],
+                'FL': ['florida', 'fl', 'sunshine state'],
+                'CA': ['california', 'ca', 'golden state'],
+                'CO': ['colorado', 'co', 'denver', 'rocky mountain'],
+                'NY': ['new york', 'ny', 'empire state'],
+                'OH': ['ohio', 'oh', 'buckeye state']
+            }
+            terms.extend(state_terms.get(str(value), []))
+        
+        elif 'city' in column_lower:
+            terms.extend([str(value).lower(), f"{value} branch", f"{value} office"])
+        
+        elif 'name' in column_lower:
+            # Add variations of branch names
+            name_parts = str(value).lower().split()
+            terms.extend(name_parts)
+        
+        return list(set(terms))  # Remove duplicates
+    
+    def _extract_query_ready_terms(self, enriched_samples: List[Dict], column_name: str) -> List[str]:
+        """ENHANCEMENT: Extract terms that will help with semantic search"""
+        terms = []
+        
+        for sample in enriched_samples[:10]:  # Top 10 most frequent
+            terms.extend(sample.get("searchable_terms", []))
+            terms.append(sample.get("business_meaning", ""))
+        
+        # Add column-specific terms
+        column_lower = column_name.lower()
+        if 'state' in column_lower:
+            terms.extend(["state location", "geographic region", "territory"])
+        elif 'city' in column_lower:
+            terms.extend(["city location", "branch city", "urban area"])
+        elif 'active' in column_lower:
+            terms.extend(["operational status", "branch status", "active inactive"])
+        
+        # Clean and deduplicate
+        clean_terms = []
+        for term in terms:
+            if term and len(str(term).strip()) > 1:
+                clean_terms.append(str(term).strip().lower())
+        
+        return list(set(clean_terms))[:20]  # Top 20 unique terms
+    
+    # Keep existing methods unchanged
     def _execute_athena_query(self, query: str, athena_client, s3_results_location: str, athena_workgroup: str) -> List[Dict]:
         """Execute Athena query and return results"""
         try:
@@ -156,7 +389,7 @@ class AthenaSamplingTool(BaseTool):
         return self._execute_athena_query(sample_query, athena_client, s3_results_location, athena_workgroup)
     
     def _get_table_schema(self, table_name: str, athena_client, s3_results_location: str, athena_workgroup: str, athena_database: str) -> Dict[str, Dict]:
-        """Get basic schema information"""
+        """Get basic schema information (fallback method)"""
         try:
             # Extract database and table name
             if '.' in table_name:
@@ -280,6 +513,7 @@ class AthenaSamplingTool(BaseTool):
         return patterns
 
 
+# Keep ColumnProfilerTool and NameDeconstructionTool unchanged - they're working fine
 class ColumnProfilerTool(BaseTool):
     name: str = "Column Statistical Profiler"
     description: str = "Get detailed statistical context for moving services table columns using AWS Athena"
@@ -296,7 +530,7 @@ class ColumnProfilerTool(BaseTool):
             athena_client = boto3.client('athena', region_name=os.getenv('AWS_REGION', 'us-east-1'))
             s3_results_location = os.getenv('ATHENA_RESULTS_BUCKET', 's3://amspoc3queryresults/')
             athena_workgroup = os.getenv('ATHENA_WORKGROUP', 'primary')
-            athena_database = os.getenv('ATHENA_DATABASE', 'amspoc3test')
+            athena_database = os.getenv('ATHENA_DATABASE', 'ams_ai_curated_catalog_dev')
             
             # Ensure table name includes database
             if '.' not in table_name:

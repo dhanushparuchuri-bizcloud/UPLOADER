@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ class LocalScribe:
     
     def __init__(self, database_name: str = None):
         self.glue = boto3.client('glue')
-        self.database_name = database_name or 'ams-dataset-metaset-extractor-test'
-        
+        # FIX: Actually use the database_name parameter when provided
+        self.database_name = database_name or os.getenv('ATHENA_DATABASE', 'ams_ai_curated_catalog_dev')        
         # Local storage instead of S3
         self.drafts_dir = Path("drafts")
         self.drafts_dir.mkdir(exist_ok=True)

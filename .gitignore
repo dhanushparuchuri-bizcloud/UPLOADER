@@ -36,6 +36,7 @@ ENV/
 
 # Output Files
 output/
+drafts/
 *.json
 *.yaml
 bedrock_test_report_*.json

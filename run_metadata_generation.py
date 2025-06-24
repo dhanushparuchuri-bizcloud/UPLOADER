@@ -49,7 +49,7 @@ class MovingServicesMetadataGenerator:
     """Complete metadata generation pipeline for moving services"""
     
     def __init__(self):
-        self.scribe = LocalScribe(database_name=os.getenv('ATHENA_DATABASE', 'amspoc3test'))
+        self.scribe = LocalScribe(database_name=os.getenv('ATHENA_DATABASE', 'ams_ai_curated_catalog_dev'))
         self.output_dir = Path("output")
         self.output_dir.mkdir(exist_ok=True)
         
