@@ -1,219 +1,257 @@
+# tasks.py
 """
 CrewAI tasks for moving services metadata generation
 """
 
 from crewai import Task
 from agents import (
-    pattern_discovery_profiler,
-    business_intelligence_synthesizer,
-    quality_assurance_validator
+    data_discovery_agent,
+    business_intelligence_agent,
+    metadata_quality_validator
 )
 
-def create_pattern_discovery_task(table_name: str, glue_metadata: dict) -> Task:
-    """Create pattern discovery task with dynamic inputs"""
-    return Task(
-        description=f"""Analyze the new table '{table_name}' with technical metadata from AWS Glue and discover 
-        comprehensive business patterns using statistical analysis and moving services domain expertise.
+# Task 1: Data Discovery
+discover_data_patterns = Task(
+    description="""Analyze {table_name} from the moving company's operational database to extract raw facts and patterns that support business analytics across all aspects of the full-spectrum relocation management platform.
 
-        DISCOVERY MISSION:
-        1. STATISTICAL CORRELATION ANALYSIS:
-           - Find columns that frequently appear together in business workflows
-           - Identify revenue impact relationships (crew size → labor costs → profitability)
-           - Discover cost driver patterns (miles → fuel costs, hours → labor expenses)
-           - Calculate statistical significance of relationships (correlation coefficients, sample sizes)
+DISCOVERY MISSION - Extract the Facts:
+1. Use AthenaSamplingTool to get real data samples (100 rows minimum)
+2. Use ColumnProfilerTool to analyze statistical patterns for key business columns
+3. Use WeaviateSearchTool to find similar column patterns from existing metadata (if available)
 
-        2. SEASONAL PATTERN DETECTION:
-           - Analyze temporal patterns for moving industry seasonality (summer peaks, winter slowdowns)
-           - Detect school calendar correlations (college move-in/out periods)
-           - Identify weather impact patterns on operations and costs
-           - Find geographic seasonal variations (northern vs southern markets)
+MOVING SERVICES BUSINESS CONTEXT:
+This national moving company operates as a comprehensive relocation management platform with:
+- Sophisticated service portfolio across residential, commercial, and corporate segments
+- Standardized process-driven service delivery with localized operational execution
+- Tiered service levels from DIY support to premium white-glove offerings
+- Specialized logistics capabilities for high-value and complex items
+- Comprehensive asset protection protocols and quality management
+- Integrated storage and ancillary services ecosystem
 
-        3. GEOGRAPHIC VARIATION ANALYSIS:
-           - Compare cost structures across different branch locations
-           - Identify regional pricing differences and market maturity levels
-           - Analyze demographic correlations (income levels, population density, homeownership rates)
-           - Detect competitive landscape differences by geography
+CRITICAL DATA PATTERNS TO IDENTIFY:
+- Operational indicators: service delivery metrics, quality measures, efficiency tracking
+- Financial metrics: revenue streams, cost structures, profitability calculations
+- Geographic identifiers: location-based performance and market analysis
+- Service classifications: tier levels, specialization areas, delivery methods
+- Customer attributes: segmentation, preferences, engagement patterns
+- Workflow tracking: process stages, status indicators, completion metrics
 
-        4. MOVING SERVICES BUSINESS CONTEXT:
-           - Labor efficiency indicators (crew productivity, completion times)
-           - Equipment utilization patterns (truck usage, maintenance cycles)
-           - Customer satisfaction drivers (service quality, delivery times)
-           - Operational optimization opportunities (route efficiency, resource allocation)
+SAMPLE VALUES FOCUS:
+Extract actual filterable values that enable business analytics across:
+- Service optimization and operational efficiency
+- Revenue analysis and financial performance
+- Market analysis and geographic comparison
+- Customer experience and satisfaction tracking
+- Resource allocation and capacity planning
 
-        Create a comprehensive BUSINESS PATTERN DOSSIER that provides statistical evidence and 
-        moving services context for the next agent to synthesize into business intelligence.
+Your analysis must capture real business categories that support data-driven decision-making across all functional areas.""",
+    expected_output="""Comprehensive data discovery report in JSON format containing:
 
-        INPUT DATA:
-        - Table name: {table_name}
-        - Glue metadata: {glue_metadata}
-        - Sample data from Athena queries
-        - Existing Weaviate knowledge for pattern comparison""",
-        expected_output="""A detailed business pattern analysis dossier in JSON format containing:
-        
-        1. Statistical correlation findings with confidence levels
-        2. Seasonal pattern analysis with business impact assessment
-        3. Geographic variation insights with market implications  
-        4. Moving services business relationships with operational impact
-        5. Evidence-based recommendations for metadata synthesis
-        
-        The dossier should be data-driven, statistically validated, and rich with moving 
-        services business context for optimal metadata generation.""",
-        agent=pattern_discovery_profiler
-    )
+{
+  "table_analysis": {
+    "table_name": "table_name_here",
+    "total_columns": "number_here",
+    "sample_rows_analyzed": 100,
+    "moving_services_patterns_identified": [
+      "operational_indicators_detected",
+      "financial_metrics_found", 
+      "geographic_identifiers_located",
+      "service_classifications_identified"
+    ]
+  },
+  "column_details": {
+    "column_name_example": {
+      "data_type": "athena_type_here",
+      "sample_values": ["actual_values_from_data"],
+      "statistics": {
+        "total_rows": "count_here",
+        "distinct_values": "count_here", 
+        "null_percentage": "percentage_here",
+        "cardinality_ratio": "ratio_here"
+      },
+      "business_pattern_analysis": "ai_interpretation_here",
+      "similar_patterns_found": ["weaviate_matches_here"]
+    }
+  },
+  "moving_services_insights": [
+    "Operational columns: columns_here supporting service delivery and efficiency tracking",
+    "Financial metrics: columns_here enabling revenue and profitability analysis", 
+    "Geographic indicators: columns_here for location-based performance comparison",
+    "Service classification: columns_here for tier and specialization analysis",
+    "Customer attributes: columns_here for segmentation and experience tracking",
+    "Workflow tracking: columns_here for process and completion monitoring"
+  ],
+  "business_analytics_supported": [
+    "Specific analytics capabilities this data enables based on patterns found"
+  ]
+}""",
+    agent=data_discovery_agent
+)
 
-def create_business_synthesis_task() -> Task:
-    """Create business synthesis task that outputs final YAML"""
-    return Task(
-        description="""Using the comprehensive business pattern dossier and draft YAML from the Scribe, 
-        synthesize intelligent metadata that transforms technical data into actionable business intelligence.
+# Task 2: Business Intelligence Generation
+generate_business_metadata = Task(
+    description="""Transform the data discovery findings into business-intelligent metadata that enables moving company stakeholders to answer critical business questions about operations, finance, and strategic performance.
 
-        INPUT: Draft YAML from Scribe with basic technical structure
-        OUTPUT: Complete YAML with AI-generated vectorized properties
+INPUT: Data discovery report with real sample values and business patterns
+OUTPUT: Complete YAML ready for Weaviate ingestion
 
-        SYNTHESIS MISSION - AI-GENERATE ALL VECTORIZED PROPERTIES:
-        1. DATASET METADATA (AI-Enhanced):
-           - description: Transform basic table comment into rich business intelligence explanation
-           - answerableQuestions: Generate JSON array of specific business questions this data answers
-           - llmHints: Create JSON object with SQL generation guidance and business context
+SYNTHESIS MISSION - Generate AI-Enhanced Metadata:
 
-        2. COLUMN METADATA (AI-Enhanced):
-           - description: Write business impact explanation for each column
-           - businessName: Create user-friendly names that operations/finance teams recognize  
-           - semanticType: Assign standardized categories for consistent analysis
-           - sqlUsagePattern: Generate expert guidance for optimal query generation
-           - sampleValues: Add representative values for context (from pattern analysis)
+FOR DATASETMETADATA (2 vectorized fields):
+- description: Rich business intelligence explanation of what operational decisions this data enables
+- answerableQuestions: JSON array of realistic moving industry questions this specific dataset can answer
 
-        MOVING SERVICES BUSINESS INTELLIGENCE FOCUS:
-        Transform statistical evidence into business intelligence that serves:
+FOR COLUMN METADATA (3 vectorized fields per column):
+- description: Explain HOW this column contributes to business calculations and decisions
+- businessName: Convert technical names to moving industry terminology
+- semanticType: Assign standardized categories for consistent analytics
 
-        OPERATIONS MANAGERS:
-        - Crew scheduling and efficiency optimization guidance
-        - Truck utilization and route planning insights
-        - Service quality and completion time factors
+MOVING SERVICES BUSINESS INTELLIGENCE FOCUS:
+Write metadata that serves three key stakeholders:
 
-        FINANCE TEAMS:
-        - Labor profitability calculation components
-        - Pricing strategy and cost management data
-        - Revenue optimization opportunities
+OPERATIONS MANAGERS need to know:
+- How columns support service delivery optimization and quality management
+- Which fields track efficiency and resource allocation metrics
+- What data enables performance measurement and process improvement
 
-        BUSINESS LEADERS:
-        - Strategic value and competitive advantages
-        - Market expansion decision support
-        - Customer satisfaction and retention drivers
+FINANCE TEAMS need to understand:
+- How columns contribute to revenue optimization and cost management
+- Which fields support profitability analysis and pricing strategy
+- What data enables financial performance tracking and margin analysis
 
-        CRITICAL: All vectorized properties (description, answerableQuestions) must be AI-generated
-        with rich moving services business context. Keep technical structure but enhance with intelligence.
+EXECUTIVES need metadata that explains:
+- How data supports strategic market analysis and competitive positioning
+- Which fields enable performance benchmarking and growth planning
+- What metrics drive business expansion and customer experience optimization
 
-        Output the complete YAML exactly as it should be saved to the repo and ingested into Weaviate.""",
-        expected_output="""Complete YAML file ready for Weaviate ingestion:
+ANSWERABLE QUESTIONS EXAMPLES (variety, not specific assumptions):
+- "How does performance vary across different operational dimensions?"
+- "What are the key cost drivers and revenue patterns?"
+- "Which locations or segments show the strongest performance?"
+- "How do service delivery metrics correlate with business outcomes?"
+- "What are the trends in customer engagement and satisfaction?"
+- "Which operational areas present optimization opportunities?"
 
-        ```yaml
-        DatasetMetadata:
-          tableName: [from_scribe]
-          athenaTableName: [from_scribe] 
-          description: "[AI-GENERATED rich business intelligence explanation]"
-          answerableQuestions: '[AI-GENERATED JSON array of business questions]'
-          llmHints: '[AI-GENERATED JSON object with SQL hints and business context]'
-          dataOwner: "[INFERRED from business context]"
-          sourceSystem: "[INFERRED from table patterns]"
+SEMANTIC TYPE CATEGORIES for moving services:
+- operational_metric: service delivery, efficiency, quality, and performance measures
+- financial_amount: revenue, costs, rates, and profitability indicators  
+- geographic_identifier: location, market, and territory references
+- workflow_status: process stages, completion states, and tracking indicators
+- service_classification: tier levels, specialization areas, and delivery methods
+- customer_attribute: demographics, preferences, engagement, and experience data
 
-        Column:
-          - columnName: [from_scribe]
-            athenaDataType: [from_scribe]
-            parentAthenaTableName: [from_scribe]
-            description: "[AI-GENERATED business impact explanation]"
-            businessName: "[AI-GENERATED user-friendly name]"
-            semanticType: "[AI-GENERATED standardized category]"
-            sqlUsagePattern: "[AI-GENERATED query guidance]"
-            sampleValues: [AI-DISCOVERED from pattern analysis]
-            # Repeat for all columns
-        ```
+Use actual sample values from discovery for the sampleValues field.""",
+    expected_output="""Complete YAML file ready for Weaviate ingestion:
 
-        YAML must be valid, complete, and ready for immediate Weaviate ingestion.""",
-        agent=business_intelligence_synthesizer
-    )
+```yaml
+DatasetMetadata:
+  tableName: table_name_from_input
+  athenaTableName: full_table_name_from_input
+  description: "[AI-generated business intelligence explanation focusing on moving services operations]"
+  answerableQuestions: '[AI-generated JSON array of realistic business questions]'
+  llmHints: '[AI-generated JSON object with query guidance and business context]'
+  dataOwner: "[Inferred from business context - Operations Team/Finance Team/etc]"
+  sourceSystem: "[Inferred from table patterns - Moving Management System/CRM/etc]"
 
-def create_validation_task() -> Task:
-    """Create validation task for YAML output"""
-    return Task(
-        description="""Validate the complete YAML metadata for business intelligence quality, 
-        technical structure, and moving services domain expertise.
+Column:
+  - columnName: "[from_discovery_data]"
+    athenaDataType: "[from_discovery_data]"
+    parentAthenaTableName: "[full_table_name_from_input]"
+    description: "[AI-generated business impact explanation with moving services context]"
+    businessName: "[AI-generated user-friendly name using industry terminology]"
+    semanticType: "[AI-assigned standardized category]"
+    sqlUsagePattern: "[AI-generated query guidance for analytics]"
+    sampleValues: "[actual_values_from_discovery]"
+    # Repeat for all columns discovered
+```
 
-        INPUT: Complete YAML ready for Weaviate ingestion
-        OUTPUT: Validation decision with YAML quality assessment
+CRITICAL: All vectorized properties must demonstrate moving services industry expertise and enable real business decision-making.""",
+    agent=business_intelligence_agent,
+    context=[discover_data_patterns]
+)
 
-        VALIDATION CRITERIA:
+# Task 3: Quality Validation
+validate_metadata_quality = Task(
+    description="""Validate the generated metadata meets the rigorous business intelligence standards required for moving company analytics and decision-making.
 
-        1. YAML STRUCTURE VALIDATION:
-           - Valid YAML syntax and format
-           - All required fields present (tableName, athenaTableName, description, etc.)
-           - Proper data types and JSON field formatting
-           - Weaviate schema compatibility
+INPUT: Complete YAML metadata ready for Weaviate ingestion
+OUTPUT: Validation decision with comprehensive quality assessment
 
-        2. AI-GENERATED CONTENT QUALITY:
-           - Are vectorized properties (description, answerableQuestions) AI-enhanced?
-           - Do descriptions explain business VALUE, not just technical content?
-           - Are answerableQuestions specific and business-relevant?
-           - Do llmHints provide actionable SQL guidance?
+VALIDATION CRITERIA - Four Critical Dimensions:
 
-        3. MOVING SERVICES BUSINESS INTELLIGENCE:
-           - Does metadata demonstrate moving industry expertise?
-           - Are labor cost, seasonal, and geographic factors addressed?
-           - Do business names use operations/finance terminology?
-           - Are semantic types appropriate for moving services analytics?
+1. TECHNICAL YAML VALIDATION:
+   - Valid YAML syntax and structure
+   - All required schema fields present and properly formatted
+   - JSON fields (answerableQuestions, llmHints) are valid JSON
+   - Sample values are properly formatted arrays
 
-        4. STAKEHOLDER VALUE VERIFICATION:
-           OPERATIONS MANAGERS: Crew scheduling, efficiency, service quality insights
-           FINANCE TEAMS: Cost analysis, profitability, pricing guidance  
-           BUSINESS LEADERS: Strategic opportunities, competitive advantages
+2. MOVING SERVICES BUSINESS INTELLIGENCE:
+   - Descriptions explain business VALUE and decision-making impact
+   - Answerable questions reflect realistic moving industry analytics
+   - Business names use terminology that operations/finance teams recognize
+   - Semantic types enable proper analytics categorization
 
-        APPROVAL CRITERIA:
-        - YAML is technically valid and Weaviate-ready
-        - All vectorized properties are AI-enhanced with business intelligence
-        - Demonstrates moving services domain expertise
-        - Provides clear value to operations, finance, and leadership stakeholders
+3. STAKEHOLDER VALUE VERIFICATION:
+   OPERATIONS MANAGERS: Can they use this for service optimization and efficiency analysis?
+   FINANCE TEAMS: Does this enable revenue analysis and cost management?
+   EXECUTIVES: Will this support strategic market and performance analysis?
 
-        If APPROVED: YAML is ready for Weaviate ingestion
-        If REJECTED: Provide specific improvement recommendations""",
-        expected_output="""YAML Validation Report in JSON format:
-        
-        {
-          "yaml_validation_status": "APPROVED" or "REJECTED",
-          "yaml_quality_score": 8.7,
-          "technical_validation": {
-            "yaml_syntax": "VALID",
-            "required_fields": "COMPLETE", 
-            "weaviate_compatibility": "READY"
-          },
-          "business_intelligence_assessment": {
-            "vectorized_properties_enhanced": true,
-            "moving_services_expertise": "COMPREHENSIVE",
-            "stakeholder_value": "HIGH"
-          },
-          "ai_content_quality": {
-            "descriptions_business_focused": true,
-            "answerable_questions_relevant": true,
-            "llm_hints_actionable": true
-          },
-          "approval_summary": "YAML demonstrates excellent business intelligence and is ready for Weaviate ingestion",
-          "next_action": "PROCEED_TO_WEAVIATE_INGESTION" or "REQUIRES_IMPROVEMENT"
-        }
-        
-        Only approve YAML that serves real moving services business intelligence needs.""",
-        agent=quality_assurance_validator
-    )
+4. COMPREHENSIVE BUSINESS ANALYTICS SUPPORT:
+   Validate metadata enables data-driven decision-making across:
+   - Service delivery optimization and operational efficiency
+   - Revenue analysis and financial performance tracking
+   - Market analysis and geographic performance comparison
+   - Customer experience and satisfaction measurement
+   - Resource allocation and strategic planning
 
-# Helper function to create all tasks with proper context
-def create_metadata_tasks(table_name: str, glue_metadata: dict) -> tuple:
-    """Create all tasks with proper context relationships"""
-    
-    # Create individual tasks
-    pattern_task = create_pattern_discovery_task(table_name, glue_metadata)
-    synthesis_task = create_business_synthesis_task()
-    validation_task = create_validation_task()
-    
-    # Set up context relationships
-    synthesis_task.context = [pattern_task]
-    validation_task.context = [pattern_task, synthesis_task]
-    
-    return pattern_task, synthesis_task, validation_task
+APPROVAL STANDARDS:
+- APPROVED: Metadata demonstrates comprehensive moving services expertise and enables business analytics across all functional areas
+- REJECTED: Metadata lacks business intelligence or fails to support decision-making across the relocation platform
+
+SAMPLE VALUES VALIDATION:
+Verify that sampleValues contain actual filterable business categories relevant to the table's purpose:
+- Service delivery metrics should show operational performance indicators
+- Financial data should show actual amounts, rates, or cost categories
+- Geographic data should show actual location or market identifiers
+- Status fields should show real workflow or process stage values
+- Classification fields should show actual service or customer categories""",
+    expected_output="""Comprehensive validation report in JSON format:
+
+{
+  "validation_status": "APPROVED or REJECTED",
+  "overall_quality_score": 8.7,
+  "technical_validation": {
+    "yaml_syntax": "VALID or INVALID",
+    "required_fields": "COMPLETE or INCOMPLETE", 
+    "json_fields": "VALID or INVALID",
+    "sample_values_format": "PROPER or IMPROPER"
+  },
+  "business_intelligence_assessment": {
+    "moving_services_expertise": "COMPREHENSIVE or PARTIAL or MISSING",
+    "stakeholder_value_score": 9.2,
+    "decision_enablement": "HIGH or MEDIUM or LOW",
+    "industry_terminology": "APPROPRIATE or NEEDS_IMPROVEMENT"
+  },
+  "critical_analytics_support": {
+    "operational_analysis_enabled": true,
+    "financial_analysis_enabled": true, 
+    "geographic_analysis_enabled": true,
+    "customer_analysis_enabled": true,
+    "service_analysis_enabled": true
+  },
+  "sample_values_quality": {
+    "filterable_for_analytics": true,
+    "business_relevant_categories": true,
+    "actual_data_values": true
+  },
+  "approval_summary": "[Explanation of approval/rejection decision]",
+  "improvement_recommendations": [
+    "[Specific suggestions if rejected or needs enhancement]"
+  ],
+  "next_action": "PROCEED_TO_WEAVIATE_INGESTION or REQUIRES_IMPROVEMENT"
+}
+
+Only approve metadata that enables real moving services business intelligence and decision-making.""",
+    agent=metadata_quality_validator,
+    context=[discover_data_patterns, generate_business_metadata]
+)
